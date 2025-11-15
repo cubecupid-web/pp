@@ -20,7 +20,7 @@ except Exception as e:
 
 # --- MODEL & HELPER FUNCTION (The "Brain") ---
 # We are using Gemini 1.5 Flash as you requested. It's fast and powerful.
-MODEL_NAME = "gemini-1.5-flash"
+MODEL_NAME = "gemini-2.5-flash-lite"
 
 def get_llm_response(prompt):
     """Sends a prompt to the Gemini model and gets a response."""
