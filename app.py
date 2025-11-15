@@ -3,14 +3,85 @@ import google.generativeai as genai
 import os
 from langchain_community.vectorstores import FAISS
 from langchain_community.embeddings import HuggingFaceEmbeddings
-from langchain_core.prompts import PromptTemplate  # <- CHANGED
-from langchain_core.runnables import RunnablePassthrough  # <- CHANGED
-from langchain_core.output_parsers import StrOutputParser  # <- CHANGED
+from langchain_core.prompts import PromptTemplate
+from langchain_core.runnables import RunnablePassthrough
+from langchain_core.output_parsers import StrOutputParser
 from langchain_google_genai import ChatGoogleGenerativeAI
 
-# --- CONFIGURATION ---
+# --- CONFIGURATION & PAGE SETUP ---
+# This MUST be the very first Streamlit command
+st.set_page_config(page_title="Nyay-Saathi", page_icon="🤝", layout="wide")
+
+# --- CUSTOM CSS FOR THE "PROPER WEBSITE" LAYOUT ---
+st.markdown("""
+<style>
+/* --- THEME --- */
+/* These are your colors from config.toml */
+:root {
+    --primary-color: #00FFD1;
+    --background-color: #08070C;
+    --secondary-background-color: #1B1C2A;
+    --text-color: #FAFAFA;
+}
+
+/* --- MAIN FONT --- */
+body {
+    font-family: 'sans serif';
+}
+
+/* --- HIDE STREAMLIT BRANDING --- */
+#MainMenu {visibility: hidden;}
+footer {visibility: hidden;}
+header {visibility: hidden;}
+
+/* --- BUTTONS --- */
+.stButton > button {
+    border: 2px solid var(--primary-color);
+    background: transparent;
+    color: var(--primary-color);
+    padding: 12px 24px;
+    border-radius: 8px;
+    font-weight: bold;
+    transition: all 0.3s ease-in-out;
+}
+
+.stButton > button:hover {
+    background: var(--primary-color);
+    color: var(--background-color);
+    box-shadow: 0 0 15px var(--primary-color);
+}
+
+/* --- TABS --- */
+.stTabs [data-baseweb="tab"] {
+    background: transparent;
+    color: var(--text-color);
+    padding: 10px;
+    transition: all 0.3s ease;
+}
+
+.stTabs [data-baseweb="tab"]:hover {
+    background: var(--secondary-background-color);
+}
+
+.stTabs [data-baseweb="tab"][aria-selected="true"] {
+    background: var(--secondary-background-color);
+    color: var(--primary-color);
+    border-bottom: 3px solid var(--primary-color);
+}
+
+/* --- TEXT AREA --- */
+.stTextArea textarea {
+    background-color: var(--secondary-background-color);
+    color: var(--text-color);
+    border: 1px solid var(--primary-color);
+    border-radius: 8px;
+}
+</style>
+""", unsafe_allow_html=True)
+
+
+# --- API KEY CONFIGURATION ---
 try:
-    st.set_page_config(page_title="Nyay-Saathi", page_icon="🤝", layout="wide")
     genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
 except Exception as e:
     st.error(f"Error configuring: {e}. Please check your API key in Streamlit Secrets.")
@@ -91,7 +162,6 @@ tab1, tab2 = st.tabs(["**Samjhao** (Explain this to me)", "**Kya Karoon?** (What
 # --- TAB 1: SAMJHAO (EXPLAIN) ---
 with tab1:
     st.header("Translate 'Legalese' into simple language")
-    # ... (rest of the code is the same) ...
     st.write("Confused by a legal notice, rent agreement, or court paper? Paste it here.")
     legal_text = st.text_area("Paste the confusing legal text here:", height=200)
     
@@ -109,7 +179,6 @@ with tab1:
 # --- TAB 2: KYA KAROON? (WHAT TO DO?) ---
 with tab2:
     st.header("Ask for a simple action plan")
-    # ... (rest of the code is the same) ...
     st.write("Scared? Confused? Ask a question and get a simple 3-step plan **based on real guides.**")
     user_question = st.text_input("Ask your question (e.g., 'My landlord is threatening to evict me')")
     

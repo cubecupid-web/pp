@@ -1,0 +1,15 @@
+[theme]
+# The main accent color (buttons, links)
+primaryColor="#00FFD1"
+
+# The main background color
+backgroundColor="#08070C"
+
+# The background color for widgets (like the text box)
+secondaryBackgroundColor="#1B1C2A"
+
+# The main text color
+textColor="#FAFAFA"
+
+# The font
+font="sans serif"
