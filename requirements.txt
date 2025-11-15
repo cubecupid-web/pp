@@ -4,4 +4,4 @@ langchain-google-genai
 langchain
 faiss-cpu
 sentence-transformers
-gradio
+langchain-community
