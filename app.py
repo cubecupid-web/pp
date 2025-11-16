@@ -46,7 +46,7 @@ div[data-testid="column"] {
     border-radius: 10px;
     padding: 10px;
 }
-/* NEW: Style the chat messages */
+/* Style the chat messages */
 div[data-testid="chat-message-container"] {
     background-color: var(--secondary-background-color);
     border-radius: 8px;
@@ -69,7 +69,6 @@ MODEL_NAME = "gemini-2.5-flash-lite"
 
 
 # --- RAG PROMPT TEMPLATE (for Column 2) ---
-# NEW: Updated prompt to understand it's part of an ongoing conversation
 rag_prompt_template = """
 You are 'Nyay-Saathi,' a kind legal friend.
 A common Indian citizen is asking for help.
@@ -123,13 +122,12 @@ def format_docs(docs):
 # --- THE RAG CHAIN ---
 rag_prompt = PromptTemplate.from_template(rag_prompt_template)
 
-# NEW: The RAG chain now accepts "chat_history"
 rag_chain_with_sources = RunnableParallel(
     {
         "context": itemgetter("question") | retriever,
         "question": itemgetter("question"),
         "language": itemgetter("language"),
-        "chat_history": itemgetter("chat_history") # Pass history through
+        "chat_history": itemgetter("chat_history")
     }
 ) | {
     "answer": (
@@ -183,7 +181,18 @@ with col1:
             with st.spinner("Your friend is reading the document..."):
                 try:
                     model = genai.GenerativeModel(MODEL_NAME)
-                    prompt_text = f"Explain this document in simple, everyday {language}..."
+                    prompt_text = f"""
+                    You are 'Nyay-Saathi,' a kind legal friend.
+                    The user has uploaded a document (MIME type: {file_type}).
+                    First, extract all the text you can see from this document.
+                    Then, explain that extracted text in simple, everyday {language}.
+                    Do not use any legal jargon.
+                    Identify the 3 most important parts for the user (like dates, names, or actions they must take).
+                    The user is scared and confused. Be kind and reassuring.
+
+                    Your Simple {language} Explanation:
+                    """
+                    
                     data_part = {'mime_type': file_type, 'data': file_bytes}
                     response = model.generate_content([prompt_text, data_part])
                     
@@ -196,16 +205,17 @@ with col1:
                     st.error(f"An error occurred: {e}")
 
 # --- COLUMN 2: KYA KAROON? (WHAT TO DO?) ---
-# --- THIS ENTIRE BLOCK IS NEW ---
+# --- THIS ENTIRE BLOCK IS UPDATED ---
 with col2:
     st.header("Kya Karoon? (Ask a Question)")
     st.write("Scared? Confused? Ask a question and get a simple 3-step plan **based on real guides.**")
 
-    # 1. Initialize chat history in Streamlit's session state
+    # 1. Initialize chat history
     if "messages" not in st.session_state:
         st.session_state.messages = []
 
-    # 2. Display past messages
+    # 2. Display all past messages (THIS IS THE FIX)
+    # This loop now runs *before* the chat input, so all messages appear above it.
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
@@ -215,53 +225,43 @@ with col2:
                 for doc in message["sources"]:
                     st.info(f"**From {doc.metadata.get('source', 'Unknown Guide')}:**\n\n...{doc.page_content}...")
 
-    # 3. Use st.chat_input (this is the new input box)
-    if prompt := st.chat_input(f"Ask your question in {language}..."):
+    # 3. Define the chat input box (it will now appear at the bottom)
+    if prompt := st.chat_input(f"Ask your follow-up question in {language}..."):
+        
         # 4. Add user's new message to history
         st.session_state.messages.append({"role": "user", "content": prompt})
         
-        # 5. Display user's new message
-        with st.chat_message("user"):
-            st.markdown(prompt)
-
-        # 6. Prepare the AI's response
-        with st.chat_message("assistant"):
-            with st.spinner("Your friend is checking the guides..."):
-                try:
-                    # 7. Create the chat history string for the RAG chain
-                    # We'll just send the last 4 messages for context
-                    chat_history_str = "\n".join([f"{m['role']}: {m['content']}" for m in st.session_state.messages[-4:-1]])
-                    
-                    # 8. Create the payload
-                    invoke_payload = {
-                        "question": prompt,
-                        "language": language,
-                        "chat_history": chat_history_str
-                    }
-                    
-                    # 9. Call the RAG chain
-                    response_dict = rag_chain_with_sources.invoke(invoke_payload) 
-                    response = response_dict["answer"]
-                    docs = response_dict["sources"]
-                    
-                    # 10. Display the AI's response
-                    st.markdown(response)
-                    
-                    # 11. Display sources
-                    if docs:
-                        st.subheader("Sources I used to answer you:")
-                        for doc in docs:
-                            st.info(f"**From {doc.metadata.get('source', 'Unknown Guide')}:**\n\n...{doc.page_content}...")
-                    
-                    # 12. Add the AI's response to history (with sources)
-                    st.session_state.messages.append({
-                        "role": "assistant",
-                        "content": response,
-                        "sources": docs
-                    })
+        # 5. Get the AI's response
+        with st.spinner("Your friend is checking the guides..."):
+            try:
+                # 6. Create the chat history string
+                chat_history_str = "\n".join([f"{m['role']}: {m['content']}" for m in st.session_state.messages[-4:-1]])
                 
-                except Exception as e:
-                    st.error(f"An error occurred during RAG processing: {e}")
+                # 7. Create the payload
+                invoke_payload = {
+                    "question": prompt,
+                    "language": language,
+                    "chat_history": chat_history_str
+                }
+                
+                # 8. Call the RAG chain
+                response_dict = rag_chain_with_sources.invoke(invoke_payload) 
+                response = response_dict["answer"]
+                docs = response_dict["sources"]
+                
+                # 9. Add the AI's response to history (with sources)
+                st.session_state.messages.append({
+                    "role": "assistant",
+                    "content": response,
+                    "sources": docs
+                })
+                
+                # 10. Force the app to re-run from the top
+                # This will make the loop in step 2 display the new messages
+                st.rerun()
+            
+            except Exception as e:
+                st.error(f"An error occurred during RAG processing: {e}")
 
 # --- DISCLAIMER (At the bottom, full width) ---
 st.divider()
