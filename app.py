@@ -12,6 +12,7 @@ from PIL import Image
 from langchain_core.messages import HumanMessage 
 import base64
 import json
+import io # <-- NEW IMPORT
 
 # --- CONFIGURATION & PAGE SETUP ---
 st.set_page_config(page_title="Nyay-Saathi", page_icon="🤝", layout="wide")
@@ -68,7 +69,7 @@ except Exception as e:
     st.stop()
 
 DB_FAISS_PATH = "vectorstores/db_faiss"
-MODEL_NAME = "gemini-2.5-flash"
+MODEL_NAME = "gemini-2.5-flash" # Assuming this is the new one you're using
 
 
 # --- RAG PROMPT TEMPLATE ---
@@ -157,8 +158,7 @@ rag_chain_with_sources = RunnableParallel(
 st.title("🤝 Nyay-Saathi (Justice Companion)")
 st.markdown("Your legal friend, in your pocket. Built for India.")
 
-# --- NEW: SESSION STATE INITIALIZATION ---
-# We initialize ALL our state variables at the top
+# --- SESSION STATE INITIALIZATION ---
 if "messages" not in st.session_state:
     st.session_state.messages = []
 if "document_context" not in st.session_state:
@@ -177,6 +177,9 @@ def clear_session():
     st.session_state.uploaded_file_bytes = None
     st.session_state.uploaded_file_type = None
     st.session_state.samjhao_explanation = None
+    # --- THIS IS THE FIX ---
+    # We set a "key" on the file uploader and then set it to None here
+    st.session_state.file_uploader_key = None 
 
 # Place language selector and clear button side-by-side
 col1, col2 = st.columns([3, 1])
@@ -186,7 +189,7 @@ with col1:
         ("Simple English", "Hindi (in Roman script)", "Kannada", "Tamil", "Telugu", "Marathi")
     )
 with col2:
-    st.write("") # Add space for alignment
+    st.write("") 
     st.write("")
     st.button("Start New Session ♻️", on_click=clear_session, type="primary")
 
@@ -202,15 +205,26 @@ with tab1:
     st.header("Upload a Legal Document to Explain")
     st.write("Take a photo (or upload a PDF) of your legal notice or agreement.")
     
-    uploaded_file = st.file_uploader("Choose a file...", type=["jpg", "jpeg", "png", "pdf"], key="file_uploader")
+    # --- THIS IS THE FIX ---
+    # We tie the uploader's "key" to our session state
+    if "file_uploader_key" not in st.session_state:
+        st.session_state.file_uploader_key = 0 # Initialize
+        
+    uploaded_file = st.file_uploader(
+        "Choose a file...", 
+        type=["jpg", "jpeg", "png", "pdf"], 
+        key=st.session_state.file_uploader_key # Use the stateful key
+    )
     
-    # Check if a file has just been uploaded
+    # Check if a *new* file has been uploaded
     if uploaded_file is not None:
-        # Save the new file to session state, clearing old explanations
-        st.session_state.uploaded_file_bytes = uploaded_file.getvalue()
-        st.session_state.uploaded_file_type = uploaded_file.type
-        st.session_state.samjhao_explanation = None # Clear old explanation
-        st.session_state.document_context = "No document uploaded." # Clear old context
+        new_file_bytes = uploaded_file.getvalue()
+        # Check if it's different from the one in memory
+        if new_file_bytes != st.session_state.uploaded_file_bytes:
+            st.session_state.uploaded_file_bytes = new_file_bytes
+            st.session_state.uploaded_file_type = uploaded_file.type
+            st.session_state.samjhao_explanation = None # Clear old explanation
+            st.session_state.document_context = "No document uploaded." # Clear old context
     
     # Display logic: ALWAYS read from session state
     if st.session_state.uploaded_file_bytes is not None:
@@ -219,7 +233,7 @@ with tab1:
         
         # Display the file
         if "image" in file_type:
-            image = Image.open(uploaded_file)
+            image = Image.open(io.BytesIO(file_bytes)) # <-- Use io.BytesIO to read from memory
             st.image(image, caption="Your Uploaded Document", use_column_width=True)
         elif "pdf" in file_type:
             st.info("PDF file uploaded. Click 'Samjhao!' to explain.")
@@ -235,7 +249,11 @@ with tab1:
                     model = genai.GenerativeModel(MODEL_NAME)
                     
                     prompt_text_multi = f"""
-                    You are an AI assistant... (etc.)
+                    You are an AI assistant. The user has uploaded a document (MIME type: {file_type}).
+                    Perform two tasks:
+                    1. Extract all raw text from the document.
+                    2. Explain the document in simple, everyday {language}.
+                    
                     Respond with ONLY a JSON object in this format:
                     {{
                       "raw_text": "The raw extracted text...",
