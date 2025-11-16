@@ -10,7 +10,7 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from operator import itemgetter
 from PIL import Image 
 from langchain_core.messages import HumanMessage 
-import base64 # We still need this for images, but will use a different method for PDFs
+import base64
 
 # --- CONFIGURATION & PAGE SETUP ---
 st.set_page_config(page_title="Nyay-Saathi", page_icon="🤝", layout="wide")
@@ -36,16 +36,16 @@ header {visibility: hidden;}
 .stButton > button:hover {
     background: var(--primary-color); color: var(--background-color); box-shadow: 0 0 15px var(--primary-color);
 }
-.stTabs [data-baseweb="tab"] {
-    background: transparent; color: var(--text-color); padding: 10px; transition: all 0.3s ease;
-}
-.stTabs [data-baseweb="tab"]:hover { background: var(--secondary-background-color); }
-.stTabs [data-baseweb="tab"][aria-selected="true"] {
-    background: var(--secondary-background-color); color: var(--primary-color); border-bottom: 3px solid var(--primary-color);
-}
 .stTextArea textarea {
     background-color: var(--secondary-background-color); color: var(--text-color);
     border: 1px solid var(--primary-color); border-radius: 8px;
+}
+/* We can add a subtle border to our columns */
+div[data-testid="column"] {
+    background: var(--secondary-background-color);
+    border: 1px solid #1B1C2A;
+    border-radius: 10px;
+    padding: 20px;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -59,10 +59,10 @@ except Exception as e:
     st.stop()
 
 DB_FAISS_PATH = "vectorstores/db_faiss"
-MODEL_NAME = "gemini-2.5-flash-lite"
+MODEL_NAME = "gemini-1.5-flash-latest"
 
 
-# --- RAG PROMPT TEMPLATE (for Tab 2) ---
+# --- RAG PROMPT TEMPLATE (for Column 2) ---
 rag_prompt_template = """
 You are 'Nyay-Saathi,' a kind legal friend.
 A common Indian citizen is asking for help.
@@ -87,7 +87,6 @@ def load_models_and_db():
         embeddings = HuggingFaceEmbeddings(model_name='sentence-transformers/all-MiniLM-L6-v2',
                                            model_kwargs={'device': 'cpu'})
         db = FAISS.load_local(DB_FAISS_PATH, embeddings, allow_dangerous_deserialization=True)
-        # This LLM object is for the RAG chain (Tab 2)
         llm = ChatGoogleGenerativeAI(model=MODEL_NAME, temperature=0.7)
         return db.as_retriever(), llm
     except Exception as e:
@@ -97,7 +96,7 @@ def load_models_and_db():
 
 retriever, llm = load_models_and_db()
 
-# --- THE RAG CHAIN (for Tab 2) ---
+# --- THE RAG CHAIN (for Column 2) ---
 rag_prompt = PromptTemplate.from_template(rag_prompt_template)
 rag_chain = (
     {
@@ -122,19 +121,22 @@ language = st.selectbox(
 
 st.divider()
 
-tab1, tab2 = st.tabs(["**Samjhao** (Explain this Document)", "**Kya Karoon?** (Ask a Question)"])
+# --- THE NEW LAYOUT ---
+# Create two columns of equal width
+col1, col2 = st.columns(2)
 
-# --- TAB 1: SAMJHAO (EXPLAIN) - NOW WITH PDF & IMAGE (FIXED) ---
-with tab1:
-    st.header("Upload a Legal Document to Explain")
+# --- COLUMN 1: SAMJHAO (EXPLAIN) ---
+with col1:
+    st.header("Samjhao (Explain this Document)")
     st.write("Take a photo (or upload a PDF) of your legal notice or agreement.")
     
     uploaded_file = st.file_uploader("Choose a file...", type=["jpg", "jpeg", "png", "pdf"])
     
     if uploaded_file is not None:
-        # --- Handle display logic ---
+        file_bytes = uploaded_file.getvalue()
         file_type = uploaded_file.type
         
+        # Display logic
         if "image" in file_type:
             image = Image.open(uploaded_file)
             st.image(image, caption="Your Uploaded Document", use_column_width=True)
@@ -144,32 +146,13 @@ with tab1:
         if st.button("Samjhao!", type="primary", key="samjhao_button"):
             with st.spinner("Your friend is reading the document..."):
                 try:
-                    file_bytes = uploaded_file.getvalue()
-                    
-                    # Create the prompt text (same for both file types)
-                    prompt_text = f"""
-                    You are 'Nyay-Saathi,' a kind legal friend.
-                    The user has uploaded a document (MIME type: {file_type}).
-                    First, extract all the text you can see from this document.
-                    Then, explain that extracted text in simple, everyday {language}.
-                    Do not use any legal jargon.
-                    Identify the 3 most important parts for the user (like dates, names, or actions they must take).
-                    The user is scared and confused. Be kind and reassuring.
-
-                    Your Simple {language} Explanation:
-                    """
-                    
-                    # --- THIS IS THE FIX ---
-                    # 1. Create a native GenAI model instance
+                    # Use native genai for multimodal
                     model = genai.GenerativeModel(MODEL_NAME)
                     
-                    # 2. Create the data part in the format the native SDK wants
-                    data_part = {
-                        'mime_type': file_type,
-                        'data': file_bytes
-                    }
+                    prompt_text = f"Explain this document in simple, everyday {language}. Identify the 3 most important parts. Be reassuring."
                     
-                    # 3. Call the native generate_content function (bypassing langchain)
+                    data_part = {'mime_type': file_type, 'data': file_bytes}
+                    
                     response = model.generate_content([prompt_text, data_part])
                     
                     if response.text:
@@ -181,10 +164,9 @@ with tab1:
                 except Exception as e:
                     st.error(f"An error occurred: {e}")
 
-# --- TAB 2: KYA KAROON? (WHAT TO DO?) ---
-# This tab is 100% UNCHANGED and still works.
-with tab2:
-    st.header("Ask for a simple action plan")
+# --- COLUMN 2: KYA KAROON? (WHAT TO DO?) ---
+with col2:
+    st.header("Kya Karoon? (Ask a Question)")
     st.write("Scared? Confused? Ask a question and get a simple 3-step plan **based on real guides.**")
     user_question = st.text_input("Ask your question (e.g., 'My landlord is threatening to evict me')")
     
@@ -211,7 +193,7 @@ with tab2:
                 except Exception as e:
                     st.error(f"An error occurred during RAG processing: {e}")
 
-# --- DISCLAIMER ---
+# --- DISCLAIMER (At the bottom, full width) ---
 st.divider()
 st.error("""
 **Disclaimer:** I am an AI, not a lawyer. This is not legal advice.
