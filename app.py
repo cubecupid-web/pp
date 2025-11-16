@@ -1,7 +1,6 @@
 import streamlit as st
 import google.generativeai as genai
 import os
-import base64
 from langchain_community.vectorstores import FAISS
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_core.prompts import PromptTemplate
@@ -11,6 +10,7 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from operator import itemgetter
 from PIL import Image 
 from langchain_core.messages import HumanMessage 
+import base64 # We still need this for images, but will use a different method for PDFs
 
 # --- CONFIGURATION & PAGE SETUP ---
 st.set_page_config(page_title="Nyay-Saathi", page_icon="🤝", layout="wide")
@@ -87,6 +87,7 @@ def load_models_and_db():
         embeddings = HuggingFaceEmbeddings(model_name='sentence-transformers/all-MiniLM-L6-v2',
                                            model_kwargs={'device': 'cpu'})
         db = FAISS.load_local(DB_FAISS_PATH, embeddings, allow_dangerous_deserialization=True)
+        # This LLM object is for the RAG chain (Tab 2)
         llm = ChatGoogleGenerativeAI(model=MODEL_NAME, temperature=0.7)
         return db.as_retriever(), llm
     except Exception as e:
@@ -131,10 +132,9 @@ with tab1:
     uploaded_file = st.file_uploader("Choose a file...", type=["jpg", "jpeg", "png", "pdf"])
     
     if uploaded_file is not None:
-        file_bytes = uploaded_file.getvalue()
+        # --- Handle display logic ---
         file_type = uploaded_file.type
         
-        # --- Display logic ---
         if "image" in file_type:
             image = Image.open(uploaded_file)
             st.image(image, caption="Your Uploaded Document", use_column_width=True)
@@ -144,25 +144,12 @@ with tab1:
         if st.button("Samjhao!", type="primary", key="samjhao_button"):
             with st.spinner("Your friend is reading the document..."):
                 try:
-                    # --- THIS IS THE FIX ---
-                    # 1. Base64-encode the file bytes
-                    file_base64 = base64.b64encode(file_bytes).decode()
+                    file_bytes = uploaded_file.getvalue()
                     
-                    # 2. Create the correct data: URI
-                    data_uri = f"data:{file_type};base64,{file_base64}"
-                    
-                    # 3. Create the data_part dictionary using "image_url"
-                    data_part = {
-                        "type": "image_url",
-                        "image_url": data_uri
-                    }
-                    
-                    # --- END OF FIX ---
-
                     # Create the prompt text (same for both file types)
                     prompt_text = f"""
                     You are 'Nyay-Saathi,' a kind legal friend.
-                    The user has uploaded a document (image or PDF).
+                    The user has uploaded a document (MIME type: {file_type}).
                     First, extract all the text you can see from this document.
                     Then, explain that extracted text in simple, everyday {language}.
                     Do not use any legal jargon.
@@ -172,20 +159,22 @@ with tab1:
                     Your Simple {language} Explanation:
                     """
                     
-                    # Create the multimodal message
-                    message = HumanMessage(
-                        content=[
-                            {"type": "text", "text": prompt_text},
-                            data_part # Add the image or PDF data
-                        ]
-                    )
+                    # --- THIS IS THE FIX ---
+                    # 1. Create a native GenAI model instance
+                    model = genai.GenerativeModel(MODEL_NAME)
                     
-                    # Invoke the LLM with the multimodal message
-                    response = llm.invoke([message])
+                    # 2. Create the data part in the format the native SDK wants
+                    data_part = {
+                        'mime_type': file_type,
+                        'data': file_bytes
+                    }
                     
-                    if response.content:
+                    # 3. Call the native generate_content function (bypassing langchain)
+                    response = model.generate_content([prompt_text, data_part])
+                    
+                    if response.text:
                         st.subheader(f"Here's what it means in {language}:")
-                        st.markdown(response.content)
+                        st.markdown(response.text)
                     else:
                         st.error("The AI could not read the document. Please try a clearer file.")
                         
