@@ -7,4 +7,5 @@ faiss-cpu
 sentence-transformers
 langchain-community
 Pillow
-supabase
+
+# Forcing a hard reset v2
